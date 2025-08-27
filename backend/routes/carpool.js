@@ -259,6 +259,115 @@ router.post('/create-status-request', async (req, res) => {
   }
 });
 
+// Get a specific carpool request by ID
+router.get('/get-carpool-request/:requestId', async (req, res) => {
+  const { requestId } = req.params;
+  console.log("Fetching carpool request for ID:", requestId);
+
+  try {
+    const result = await client.query(
+      'SELECT * FROM "Carpool_Request_Status" WHERE "RequestID" = $1',
+      [requestId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Carpool request not found' });
+    }
+
+    res.status(200).json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Error fetching carpool request:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch carpool request' });
+  }
+});
+
+// PUT /api/carpool/update-carpool-request
+router.put('/update-carpool-request', async (req, res) => {
+  try {
+    const {
+      RequestID,
+      pickup_location,
+      dropoff_location,
+      seats,
+      date,
+      pickup_time,
+      dropoff_time,
+      smoking_preference,
+      music_preference,
+      conversation_preference,
+      allows_luggage,
+      is_recurring,
+      recurring_days,
+      special_requests,
+      route_type,
+      fare,
+      distance_km
+    } = req.body;
+
+    const query = `
+      UPDATE "Carpool_Request_Status" 
+      SET 
+        pickup_location = $1,
+        dropoff_location = $2,
+        seats = $3,
+        date = $4,
+        pickup_time = $5,
+        dropoff_time = $6,
+        smoking_preference = $7,
+        music_preference = $8,
+        conversation_preference = $9,
+        allows_luggage = $10,
+        is_recurring = $11,
+        recurring_days = $12,
+        special_requests = $13,
+        route_type = $14,
+        fare = $15,
+        distance_km = $16
+      WHERE "RequestID" = $17
+      RETURNING *;
+    `;
+
+    const values = [
+      pickup_location,
+      dropoff_location,
+      seats,
+      date,
+      pickup_time,
+      dropoff_time,
+      smoking_preference,
+      music_preference,
+      conversation_preference,
+      allows_luggage,
+      is_recurring,
+      recurring_days,
+      special_requests,
+      route_type,
+      fare,
+      distance_km,
+      RequestID
+    ];
+
+    const result = await client.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: result.rows[0],
+      message: 'Carpool request updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating carpool request:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update carpool request',
+      error: error.message
+    });
+  }
+});
+
 // ✅ Delete carpool request 
 router.delete('/delete-status-request/:requestId', async (req, res) => {
   const { requestId } = req.params;

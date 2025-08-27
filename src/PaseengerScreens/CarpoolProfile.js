@@ -14,7 +14,7 @@ import { StatusBar } from 'react-native';
 import { ActivityIndicator } from 'react-native';
 import { CARPOOL_PRICE_PARAMS } from './Carpool';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { saveCarpoolProfile, API_URL, saveCarpoolRequest } from '../../api';
+import { saveCarpoolProfile, API_URL, saveCarpoolRequest, updateCarpoolRequest } from '../../api';
 import axios from 'axios';
 
 const primaryColor = '#D64584';
@@ -29,7 +29,9 @@ const CarpoolProfile = () => {
     profileId,
     pickupLocation,
     dropoffLocation,
-    distanceKm
+    distanceKm,
+    isEditing,
+    requestId
   } = route.params;
 
   // Ensure distance is a number (fix NaN issues)
@@ -37,6 +39,7 @@ const CarpoolProfile = () => {
 
   console.log("PassengerID on Carpool Profile:", passengerId);
   console.log("distance on Carpool Profile:", distanceKm);
+  console.log("Editing mode:", isEditing, "Request ID:", requestId);
 
   const [saveProfile, setSaveProfile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,10 +72,47 @@ const CarpoolProfile = () => {
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-  //initialize with saved profile
+  // Initialize with saved profile or existing request
   useEffect(() => {
     const initializeForm = async () => {
-      if (profileId) {
+      // If we're editing an existing request, fetch its data
+      if (isEditing && requestId) {
+        try {
+          const res = await axios.get(`${API_URL}/api/carpool/get-carpool-request/${requestId}`);
+          const requestData = res.data.data;
+
+          console.log("Editing request data:", requestData);
+
+          setRequest(prev => ({
+            ...prev,
+            pickup: requestData.pickup_location,
+            dropoff: requestData.dropoff_location,
+            seatsNeeded: requestData.seats.toString(),
+            date: new Date(requestData.date),
+            smoking: requestData.smoking_preference,
+            music: requestData.music_preference,
+            conversation: requestData.conversation_preference,
+            luggage: requestData.allows_luggage,
+            recurring: requestData.is_recurring,
+            daysOfWeek: requestData.recurring_days?.split(',') || [],
+            specialRequests: requestData.special_requests || '',
+          }));
+
+          setRouteType(requestData.route_type || 'One Way');
+          setPickupTime(new Date(`1970-01-01T${requestData.pickup_time}`));
+          if (requestData.route_type === 'Two Way' && requestData.dropoff_time) {
+            setDropOffTime(new Date(`1970-01-01T${requestData.dropoff_time}`));
+          }
+
+          // Pre-calculate fare for the existing request
+          setTimeout(calculateFare, 100);
+        } catch (error) {
+          console.error('Error fetching request:', error);
+          Alert.alert("Error", "Failed to load request data");
+        }
+      }
+      // If we're editing a profile
+      else if (profileId) {
         try {
           const res = await axios.get(`${API_URL}/api/carpool/get-carpool-profile/${profileId}`);
           const profile = res.data.data;
@@ -90,9 +130,8 @@ const CarpoolProfile = () => {
             recurring: profile.is_recurring,
             daysOfWeek: profile.recurring_days?.split(',') || [],
             specialRequests: profile.special_requests || '',
-            fare: profile.fare|| '',
-              distance_km: distanceKm  // Add distance
-
+            fare: profile.fare || '',
+            distance_km: distanceKm  // Add distance
           }));
 
           setRouteType(profile.route_type || 'One Way');
@@ -100,6 +139,9 @@ const CarpoolProfile = () => {
           if (profile.route_type === 'Two Way' && profile.dropoff_time) {
             setDropOffTime(new Date(`1970-01-01T${profile.dropoff_time}`));
           }
+
+          // Pre-calculate fare for the profile
+          setTimeout(calculateFare, 100);
         } catch (error) {
           console.error('Error fetching profile:', error);
           Alert.alert("Error", "Failed to load profile data");
@@ -134,6 +176,9 @@ const CarpoolProfile = () => {
           // Ensure date is a Date object
           date: incomingState.date ? new Date(incomingState.date) : prev.date
         }));
+
+        // Calculate fare for new request
+        setTimeout(calculateFare, 100);
       }
 
       setIsInitialized(true);
@@ -142,8 +187,7 @@ const CarpoolProfile = () => {
     if (!isInitialized) {
       initializeForm();
     }
-  }, [pickupLocation, dropoffLocation, profileId, isInitialized, route.params?.formState]);
-
+  }, [pickupLocation, dropoffLocation, profileId, isInitialized, route.params?.formState, isEditing, requestId]);
 
   // Calculate fare whenever seats or time changes
   useEffect(() => {
@@ -296,7 +340,7 @@ const CarpoolProfile = () => {
     } else {
       setShowTimePicker(true);
     }
-  };  
+  };
 
   const formatTime = (date) => {
     if (!date) return 'Select Time';
@@ -324,7 +368,12 @@ const CarpoolProfile = () => {
       setRequest({ ...request, date: selectedDate });
     }
   };
-
+  const formatDateForDB = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
   const formatTimeForDB = (date) => {
     if (!date) return null;
     const hours = date.getHours().toString().padStart(2, '0');
@@ -338,18 +387,19 @@ const CarpoolProfile = () => {
       Alert.alert('Error', 'Fare calculation in progress');
       return;
     }
-    const { pickup, dropoff, seatsNeeded, date, recurring, daysOfWeek  } = request;
+    const { pickup, dropoff, seatsNeeded, date, recurring, daysOfWeek } = request;
     if (!pickup || !dropoff || !seatsNeeded || !date) {
       Alert.alert("Error", "Please complete all required fields.");
       return;
     }
 
-// ✅ New validation: If recurring ride but no day selected
-console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWeek);
-  if (!recurring || (!daysOfWeek || daysOfWeek.length === 0)) {
-    Alert.alert("Error", "Please select at least one day for a recurring ride.");
-    return;
-  }
+    // ✅ New validation: If recurring ride but no day selected
+    console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWeek);
+    if (request.recurring && (!daysOfWeek || daysOfWeek.length === 0)) {
+      Alert.alert("Error", "Please select at least one day for a recurring ride.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -358,7 +408,7 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
         pickup_location: pickup,
         dropoff_location: dropoff,
         seats: parseInt(seatsNeeded),
-        date: date.toISOString().split('T')[0],
+        date: formatDateForDB(request.date),
         pickup_time: formatTimeForDB(pickupTime),
         dropoff_time: routeType === 'Two Way' ? formatTimeForDB(dropOffTime) : null,
         smoking_preference: request.smoking,
@@ -370,56 +420,80 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
         special_requests: request.specialRequests || null,
         route_type: routeType,
         fare: fareDetails.totalFare,
-          distance_km: distanceKm  // Add distance
-
+        distance_km: distanceKm  // Add distance
       };
 
       let carpool_profile_id = null;
 
-      if (saveProfile) {
-        const profilePayload = {
-          UserID: userId,
-          ...ridePayload,
-            distance_km: distanceKm  // Add distance
-
+      // If we're editing an existing request
+      if (isEditing && requestId) {
+        // Update the existing request
+        const updatePayload = {
+          RequestID: requestId,
+          ...ridePayload
         };
 
-        const response = await saveCarpoolProfile(profilePayload);
-        if (response && response.data && response.data.data) {
-          carpool_profile_id = response.data.data.carpool_profile_id;
-          Alert.alert("Success", "Profile saved successfully!");
+        const response = await updateCarpoolRequest(updatePayload);
+        if (response && response.data && response.data.success) {
+          Alert.alert("Success", "Request updated successfully!");
+
+          // Navigate back or to status screen
+          navigation.navigate('CarpoolStatusScreen', {
+            userId,
+            passengerId,
+            fareDetails,
+            isUpdated: true
+          });
+        } else {
+          throw new Error(response?.data?.error || "Failed to update request");
         }
       }
-      let RequestID = null;
+      // If we're creating a new request
+      else {
+        if (saveProfile) {
+          const profilePayload = {
+            UserID: userId,
+            ...ridePayload,
+            distance_km: distanceKm  // Add distance
+          };
 
-      // Always create carpool status
-      const statusPayload = {
-        PassengerID: passengerId,
-        carpool_profile_id: carpool_profile_id || null,
-        ...ridePayload,
-      };
+          const response = await saveCarpoolProfile(profilePayload);
+          if (response && response.data && response.data.data) {
+            carpool_profile_id = response.data.data.carpool_profile_id;
+            Alert.alert("Success", "Profile saved successfully!");
+          }
+        }
+        let RequestID = null;
 
-      const response = await saveCarpoolRequest(statusPayload);
-      if (response && response.data && response.data.data) {
-        RequestID = response.data.data.RequestID;
+        // Always create carpool status
+        const statusPayload = {
+          PassengerID: passengerId,
+          carpool_profile_id: carpool_profile_id || null,
+          ...ridePayload,
+        };
+
+        const response = await saveCarpoolRequest(statusPayload);
+        if (response && response.data && response.data.data) {
+          RequestID = response.data.data.RequestID;
+        }
+        console.log("Ride Request ID:", RequestID);
+
+        // Navigate to status screen
+        navigation.navigate('CarpoolStatusScreen', { userId, passengerId, fareDetails });
       }
-      console.log("Ride Request ID:", RequestID);
-
-      // Navigate to status screen
-      navigation.navigate('CarpoolStatusScreen', { userId, passengerId, fareDetails });
     } catch (error) {
-      console.error('Error saving profile or creating request:', error);
+      console.error('Error saving profile or creating/updating request:', error);
       Alert.alert(
         "Error",
         error.response?.data?.error ||
         error.response?.data?.message ||
-        "Failed to submit carpool request."
+        error.message ||
+        "Failed to process carpool request."
       );
     } finally {
       setIsSubmitting(false);
     }
   };
-
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -434,7 +508,7 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
               // Convert Date objects to ISO strings for serialization
               const serializableState = {
                 ...request,
-                date: request.date.toISOString(),
+                date: formatDateForDB(request.date),
                 time: request.time.toISOString()
               };
 
@@ -449,7 +523,8 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>
-            {profileId ? 'Edit Carpool Profile' : 'Create Carpool Profile'}
+            {isEditing && requestId ? 'Edit Carpool Request' :
+              profileId ? 'Edit Carpool Profile' : 'Create Carpool Profile'}
           </Text>
         </View>
 
@@ -491,7 +566,6 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.officeReportTime}>*Office Report Time</Text>
 
           {/* Location Card */}
           <View style={styles.locationCard}>
@@ -658,7 +732,6 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
             </View>
           )}
 
-
           {/* Recurring */}
           <View style={styles.switchContainer}>
             <Text style={styles.label}>Recurring Ride</Text>
@@ -754,7 +827,8 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
                   <Picker.Item label="Friendly Chat" value="Friendly Chat" />
                 </Picker>
               </View>
-
+ </>
+          )}
               {/* Luggage */}
               <View style={styles.switchContainer}>
                 <Text style={styles.label}>Have Luggage</Text>
@@ -765,8 +839,8 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
                   thumbColor={request.luggage ? "#fff" : "#f4f3f4"}
                 />
               </View>
-            </>
-          )}
+           
+
 
           {/* Special Requests */}
           <View style={styles.inputGroup}>
@@ -781,16 +855,18 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
             />
           </View>
 
-          {/* Save Profile */}
-          <View style={styles.switchContainer}>
-            <Text style={styles.label}>Save Profile</Text>
-            <Switch
-              value={saveProfile}
-              onValueChange={(value) => setSaveProfile(value)}
-              trackColor={{ false: "#767577", true: "#D64584" }}
-              thumbColor={saveProfile ? "#fff" : "#f4f3f4"}
-            />
-          </View>
+          {/* Save Profile - Only show for new requests, not when editing */}
+          {!isEditing && (
+            <View style={styles.switchContainer}>
+              <Text style={styles.label}>Save Profile</Text>
+              <Switch
+                value={saveProfile}
+                onValueChange={(value) => setSaveProfile(value)}
+                trackColor={{ false: "#767577", true: "#D64584" }}
+                thumbColor={saveProfile ? "#fff" : "#f4f3f4"}
+              />
+            </View>
+          )}
 
         </ScrollView>
 
@@ -803,7 +879,9 @@ console.log("Recurring:", request.recurring, "Days selected:", request.daysOfWee
           {isSubmitting || isCalculating ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.submitButtonText}>Confirm Booking</Text>
+            <Text style={styles.submitButtonText}>
+              {isEditing && requestId ? 'Update Request' : 'Confirm Booking'}
+            </Text>
           )}
         </TouchableOpacity>
       </KeyboardAvoidingView>
@@ -826,7 +904,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    height: 26,
+    height: 56,
     backgroundColor: '#F5F5F5',
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
@@ -842,6 +920,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignSelf: 'center',
     marginTop: 8,
+    marginBottom: 18,
     marginLeft: 64,
     marginRight: 64,
     borderRadius: 8,
@@ -886,64 +965,66 @@ const styles = StyleSheet.create({
   },
   toggleButtonTextActive: {
     color: 'white',
+    fontWeight: 'bold',
   },
   officeReportTime: {
-    alignSelf: 'flex-end',
-    marginTop: 24,
-    marginRight: 4,
     fontSize: 12,
-    color: 'gray',
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 16,
   },
   locationCard: {
     backgroundColor: 'white',
-    borderRadius: 8,
-    marginTop: 8,
-    marginBottom: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: lightGrey,
-    elevation: 2,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    marginBottom: 12,
   },
   locationInput: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 12,
     fontSize: 16,
-    color: 'black',
+    color: '#333',
     paddingVertical: 0,
-  },
-  timeText: {
-    fontSize: 16,
-    color: 'gray',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  timeTextInactive: {
-    fontSize: 16,
-    color: 'lightgray',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    minHeight: 40,
+    textAlignVertical: 'top',
   },
   directionArrowContainer: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginVertical: 4,
-    borderLeftWidth: 1,
-    borderLeftColor: lightGrey,
-    height: 30,
     marginLeft: 10,
-    paddingLeft: 5,
+  },
+  timeText: {
+    fontSize: 14,
+    color: '#000000ff',
+    fontWeight: '500',
+    padding: 8,
+    borderRadius: 6,
+  },
+  timeTextInactive: {
+    fontSize: 14,
+    color: '#ccc',
+    fontWeight: '500',
+    padding: 8,
+  },
+  distanceText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+    textAlign: 'left',
   },
   inputGroup: {
-    marginBottom: 16,
+marginBottom: 16,
     backgroundColor: 'white',
     borderRadius: 8,
     padding: 12,
@@ -954,129 +1035,162 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 1,
+    },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 8,
+    color: '#333',
   },
-  label: { fontSize: 14, marginBottom: 8, color: '#555', fontWeight: '500' },
-  smallLabel: { fontSize: 12, marginBottom: 8, color: '#777' },
-  input: { height: 40, fontSize: 16 },
-  multilineInput: { height: 100, textAlignVertical: 'top' },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  dateTimeButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 40
+  smallLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+    color: '#666',
   },
   pickerField: {
-    height: 50,
-    borderColor: '#D64584',
     borderWidth: 1,
-    borderRadius: 5,
-    justifyContent: 'center',
+    borderColor: '#ddd',
+    borderRadius: 8,
+    backgroundColor: 'white',
     overflow: 'hidden',
-    marginBottom: 8,
   },
   picker: {
     height: 50,
     width: '100%',
-    color: '#050505',
+    color: '#333',
   },
-  pickerStyle: {
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dateTimeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
     backgroundColor: 'white',
-    ...Platform.select({
-      android: {
-        color: '#D64584',
-      },
-    }),
+  },
+  fareCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  fareHeader: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#333',
+    textAlign: 'center',
+  },
+  fareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   switchContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16
+    marginBottom: 16,
   },
   daysContainer: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16
+    marginBottom: 16,
   },
-  daysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8
-  },
+
   dayButton: {
-    width: 40,
-    height: 40,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#ddd',
-    justifyContent: 'center',
-    alignItems: 'center'
+    marginBottom: 8,
+    alignItems: 'center',
+    marginRight: 6,
+    borderRadius: 20,
+    marginTop: 4
   },
   dayButtonSelected: {
-    backgroundColor: '#D64584',
-    borderColor: '#D64584'
+    backgroundColor: primaryColor,
+    borderColor: primaryColor,
   },
   dayButtonText: {
     fontSize: 12,
-    color: '#555'
+    color: '#666',
+    fontWeight: '500',
   },
   dayButtonTextSelected: {
-    color: 'white'
+    color: 'white',
+    fontWeight: '600',
+  },
+
+  // Also update the daysRow style to match the spacing:
+  daysRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    marginTop: 8,
   },
   preferencesHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    marginBottom: 16,
   },
   preferencesHeaderText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50'
-  },
-  fareCard: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 15,
-    marginBottom: 15,
-
-    elevation: 2
-  },
-  fareHeader: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10
+    fontWeight: '600',
+    color: '#333',
   },
-  fareRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: 4
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
   },
-  totalFareText: {
-    fontWeight: 'bold',
-    fontSize: 16
+  multilineInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
   },
   submitButton: {
     backgroundColor: primaryColor,
+    borderRadius: 25,
     padding: 16,
-    borderRadius: 8,
     alignItems: 'center',
-    marginTop: 16
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
   submitButtonText: {
     color: 'white',
+    fontSize: 18,
     fontWeight: 'bold',
-    fontSize: 16
-  }
+  },
+  androidPicker: {
+    height: 150,
+    marginTop: -20,
+  },
+  pickerStyle: {
+    height: 120,
+    marginTop: -10,
+  },
 });
 
 export default CarpoolProfile;

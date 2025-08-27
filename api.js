@@ -120,7 +120,15 @@ export const saveCarpoolRequest = async (profileData) => {
   }
 };
 
-
+export const updateCarpoolRequest = async (requestData) => {
+  try {
+    const response = await axios.put(`${API_URL}/api/carpool/update-carpool-request`, requestData);
+    return response;
+  } catch (error) {
+    console.error('Error updating carpool request:', error);
+    throw error;
+  }
+};
 
 
 // ✅Get Saved carpool profile

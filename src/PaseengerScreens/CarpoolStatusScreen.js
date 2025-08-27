@@ -112,6 +112,19 @@ const CarpoolStatusScreen = ({ route }) => {
   }, [selectedTab, passengerId]);
 
 
+  const handleEdit = (request) => {
+  // Navigate to CarpoolProfile with the necessary parameters
+  navigation.navigate('CarpoolProfile', {
+    userId,
+    passengerId,
+    isEditing: true, // Flag to indicate we're editing
+    requestId: request.RequestID, // The ID of the request to update
+    pickupLocation: request.pickup_location,
+    dropoffLocation: request.dropoff_location,
+    distanceKm: request.distance_km || 0
+  });
+};
+
   // Toggle favourite
   const toggleFavourite = async (driverID) => {
     try {
@@ -235,27 +248,27 @@ const CarpoolStatusScreen = ({ route }) => {
           text: "Yes",
           onPress: async () => {
             try {
-            const passengerData = await getPassengerUserIdFromRequest(requestId);
-            console.log('API Response:', passengerData);
-            
-            // Handle case where driverusername might be undefined
-             const driverName = passengerData.driverusername || 'your driver';
-            console.log('Using driver name:', driverName);
+              const passengerData = await getPassengerUserIdFromRequest(requestId);
+              console.log('API Response:', passengerData);
+
+              // Handle case where driverusername might be undefined
+              const driverName = passengerData.driverusername || 'your driver';
+              console.log('Using driver name:', driverName);
               const res = await updateCarpoolStatus(requestId, "joined");
 
               if (res.success) {
                 ToastAndroid.show('Joined', ToastAndroid.SHORT);
 
-               try {
-                await axios.post(`${API_URL}/api/save-notification`, {
-                  userId,
-                  type: 'Joined Carpool',
-                  message: `You joined the carpool with with Driver`,
-                });
-                console.log("Notification saved successfully");
-              } catch (notifError) {
-                console.error("Failed to save notification:", notifError);
-              }
+                try {
+                  await axios.post(`${API_URL}/api/save-notification`, {
+                    userId,
+                    type: 'Joined Carpool',
+                    message: `You joined the carpool with with Driver`,
+                  });
+                  console.log("Notification saved successfully");
+                } catch (notifError) {
+                  console.error("Failed to save notification:", notifError);
+                }
 
 
                 // ✅ Instant UI update
@@ -813,17 +826,40 @@ const CarpoolStatusScreen = ({ route }) => {
 
           {selectedTab !== 'accepted' &&
             item.status?.toLowerCase() !== 'completed' &&
+            item.status?.toLowerCase() !== 'joined' &&
             item.status?.toLowerCase() !== 'rejected' && (
-              <TouchableOpacity
-                onPress={() => handleDelete(item.RequestID)}
-                disabled={isDeleting && deletingId === item.RequestID}
-              >
-                {isDeleting && deletingId === item.RequestID ? (
-                  <ActivityIndicator size="small" color={primaryColor} />
-                ) : (
-                  <Ionicons name="trash-outline" size={20} color={primaryColor} />
-                )}
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+
+                {/* Edit Button (Left side, medium size) */}
+                <TouchableOpacity
+                  style={[
+                    styles.viewButton,
+                    {
+                      backgroundColor: '#17A2B8',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 6,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                    },
+                  ]}
+                   onPress={() => handleEdit(item)}>
+                  <Text style={[styles.viewButtonText, { marginRight: 6 }]}>Edit</Text>
+                  <Ionicons name="create-outline" size={16} color="#fff" />
+                </TouchableOpacity>
+
+                {/* Delete Icon (Right side) */}
+                <TouchableOpacity
+                  onPress={() => handleDelete(item.RequestID)}
+                  disabled={isDeleting && deletingId === item.RequestID}
+                >
+                  {isDeleting && deletingId === item.RequestID ? (
+                    <ActivityIndicator size="small" color={primaryColor} />
+                  ) : (
+                    <Ionicons name="trash-outline" size={20} color={primaryColor} />
+                  )}
+                </TouchableOpacity>
+              </View>
             )}
 
         </View>
@@ -838,13 +874,13 @@ const CarpoolStatusScreen = ({ route }) => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Carpools</Text>
         <TouchableOpacity>
-    <LottieView
-      source={require('../../assets/pinkCar.json')} // put your .json file in assets
-      autoPlay
-      loop
-      style={{ width: 50, height: 50 }}
-    />
-  </TouchableOpacity>
+          <LottieView
+            source={require('../../assets/pinkCar.json')} // put your .json file in assets
+            autoPlay
+            loop
+            style={{ width: 50, height: 50 }}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
@@ -856,10 +892,10 @@ const CarpoolStatusScreen = ({ route }) => {
             onPress={() => setSelectedTab(tab)}
           >
             <Text style={[styles.tabText, selectedTab === tab && styles.activeTabText]}
-            allowFontScaling={false}       // prevents Samsung large text scaling
-        adjustsFontSizeToFit           // auto-resizes text if needed
-        minimumFontScale={0.8}         // won’t shrink below 80%
-        numberOfLines={1} >
+              allowFontScaling={false}       // prevents Samsung large text scaling
+              adjustsFontSizeToFit           // auto-resizes text if needed
+              minimumFontScale={0.8}         // won’t shrink below 80%
+              numberOfLines={1} >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </Text>
             {selectedTab === tab && <View style={styles.tabIndicator} />}
@@ -913,17 +949,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#eee', paddingHorizontal: 8,
   },
   tab: {
-  flex: 1,                  // all 5 share row evenly
-  paddingVertical: 12,
-  alignItems: 'center',
-  justifyContent: 'center',
+    flex: 1,                  // all 5 share row evenly
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   activeTab: { position: 'relative' },
-  tabText: {  color: '#666',
-  fontWeight: '500',
-  fontSize: 12,
-  includeFontPadding: false, // Android extra padding fix
-  textAlign: 'center',},
+  tabText: {
+    color: '#666',
+    fontWeight: '500',
+    fontSize: 12,
+    includeFontPadding: false, // Android extra padding fix
+    textAlign: 'center',
+  },
   activeTabText: { color: primaryColor, fontWeight: '600' },
   tabIndicator: { position: 'absolute', bottom: 0, height: 3, width: '100%', backgroundColor: primaryColor },
   listContent: { paddingHorizontal: 15, paddingBottom: 20 },
@@ -952,8 +990,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingBottom: 10,
   },
-
-
+  viewButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   acceptRejectContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',

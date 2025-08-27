@@ -10,8 +10,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import axios from 'axios';
+import moment from 'moment';
 
 const primaryColor = '#D64584';
+const darkGrey = '#333';
 
 const CarpoolProfileList = ({ route, navigation }) => {
   const { userId, passengerId } = route.params || {};
@@ -19,7 +21,8 @@ const CarpoolProfileList = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState(null);
-
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const fullText = 'SAHELI';
   const [displayedText, setDisplayedText] = useState('');
@@ -28,7 +31,7 @@ const CarpoolProfileList = ({ route, navigation }) => {
 
   useEffect(() => {
     let index = 0;
-    const letterDelay = 600; // ms per letter (adjust to fit Lottie duration)
+    const letterDelay = 600;
 
     const animateLetter = () => {
       setDisplayedText(fullText.slice(0, index + 1));
@@ -51,12 +54,11 @@ const CarpoolProfileList = ({ route, navigation }) => {
         if (index < fullText.length) {
           setTimeout(animateLetter, letterDelay);
         } else {
-          // Wait for Lottie loop to finish
           setTimeout(() => {
             index = 0;
             setDisplayedText('');
             animateLetter();
-          }, 1500); // Pause before restarting
+          }, 1500);
         }
       });
     };
@@ -66,15 +68,7 @@ const CarpoolProfileList = ({ route, navigation }) => {
 
   const formatTime = (timeStr) => {
     if (!timeStr) return 'N/A';
-    const [hours, minutes] = timeStr.split(':');
-    const date = new Date();
-    date.setHours(+hours);
-    date.setMinutes(+minutes);
-    return date.toLocaleTimeString('en-PK', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
+    return moment(timeStr, 'HH:mm:ss').format('hh:mm A');
   };
 
   const fetchProfiles = async () => {
@@ -85,7 +79,7 @@ const CarpoolProfileList = ({ route, navigation }) => {
       console.error('Error fetching profiles:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false); // ✅ stop pull-to-refresh spinner
+      setRefreshing(false);
     }
   };
 
@@ -93,7 +87,6 @@ const CarpoolProfileList = ({ route, navigation }) => {
     fetchProfiles();
   }, []);
 
-  // ✅ Delete with UI update + alert
   const handleDelete = (profileId) => {
     Alert.alert(
       'Delete Profile',
@@ -104,19 +97,16 @@ const CarpoolProfileList = ({ route, navigation }) => {
           text: 'Yes, Delete',
           onPress: async () => {
             try {
+              setIsDeleting(true);
+              setDeletingId(profileId);
               await axios.delete(`${API_URL}/api/carpool/delete-carpool-profile/${profileId}`);
               setProfiles(prev => prev.filter(item => item.carpool_profile_id !== profileId));
-              Toast.show({
-                type: 'success',
-                text1: 'Deleted',
-                text2: 'Carpool profile removed successfully.'
-              });
+              Alert.alert('Success', 'Carpool profile removed successfully.');
             } catch (err) {
-              Toast.show({
-                type: 'error',
-                text1: 'Error',
-                text2: 'Failed to delete profile.'
-              });
+              Alert.alert('Error', 'Failed to delete profile.');
+            } finally {
+              setIsDeleting(false);
+              setDeletingId(null);
             }
           }
         }
@@ -124,177 +114,158 @@ const CarpoolProfileList = ({ route, navigation }) => {
     );
   };
 
+  const renderRecurringDays = (recurringDays) => {
+    if (!recurringDays) return null;
+    return (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+        {recurringDays.split(',').map((day, index) => (
+          <View key={index} style={styles.dayCircle}>
+            <Text style={styles.dayText}>{day.trim().slice(0, 3)}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   const renderCard = ({ item }) => {
-    const isTwoWay = item.route_type === 'Two Way';
-    const recurringDays = item.recurring_days?.split(',').filter(Boolean) || [];
+    const lower = (str) => (str || '').toLowerCase();
+    const isTwoWay = lower(item.route_type) === 'two way';
+    const formattedDate = item.date ? moment(item.date).format('DD-MM-YYYY') : null;
+    const pickupTime = formatTime(item.pickup_time);
+    const dropoffTime = item.dropoff_time ? formatTime(item.dropoff_time) : null;
+
+    const showPreferences =
+      (item.smoking_preference && lower(item.smoking_preference) !== 'no preference') ||
+      (item.music_preference && lower(item.music_preference) !== 'no preference') ||
+      (item.conversation_preference && lower(item.conversation_preference) !== 'no requirements') ||
+      item.allows_luggage;
+
+    const preferences = [];
+
+    if (item.smoking_preference && lower(item.smoking_preference) !== 'no-preference') {
+      preferences.push({
+        icon: <MaterialIcons name="smoking-rooms" size={16} color={primaryColor} />,
+        label: `Smoking: ${item.smoking_preference}`
+      });
+    }
+    if (item.music_preference && lower(item.music_preference) !== 'no-preference') {
+      preferences.push({
+        icon: <Ionicons name="musical-notes" size={16} color={primaryColor} />,
+        label: `Music: ${item.music_preference}`
+      });
+    }
+    if (item.conversation_preference && lower(item.conversation_preference) !== 'no-preference' &&
+      lower(item.conversation_preference) !== 'no requirements') {
+      preferences.push({
+        icon: <Ionicons name="chatbubble-ellipses" size={16} color={primaryColor} />,
+        label: `Conversation: ${item.conversation_preference}`
+      });
+    }
+    if (item.allows_luggage) {
+      preferences.push({
+        icon: <FontAwesome5 name="suitcase-rolling" size={16} color={primaryColor} />,
+        label: 'Luggage Allowed'
+      });
+    }
 
     return (
       <View style={styles.card}>
-        <View style={styles.row}>
-          <FontAwesome5 name="dot-circle" size={20} color={primaryColor} />
-          <Text style={styles.text}>{item.pickup_location}</Text>
-          <Text style={styles.timeRight}>{formatTime(item.pickup_time)}</Text>
+        <View style={styles.cardHeader}>
+          {formattedDate && <Text style={styles.cardDate}>Start From: {formattedDate}</Text>}
+          <View style={[styles.badge, { backgroundColor: "#ffffff"}]}>
+            <Text style={styles.badgeText}>{item.route_type || 'One Way'}</Text>
+          </View>
         </View>
 
-        <View style={styles.arrowRow}>
+        {/* Pickup Row */}
+        <View style={styles.routeRow}>
+          <View style={styles.routeDot} />
+          <Text style={styles.locationText}>
+            <Text style={styles.locationLabel}>Pickup: </Text>
+            {item.pickup_location}
+          </Text>
+          <Text style={styles.timeText}>{pickupTime}</Text>
+        </View>
+
+        {/* Arrow Between */}
+        <View style={{ alignItems: 'start', marginVertical: 4 }}>
           <Ionicons
             name={isTwoWay ? 'swap-vertical' : 'arrow-down'}
             size={20}
-            color={'#555'}
+            color='#555'
           />
         </View>
 
-        <View style={styles.row}>
-          <FontAwesome5 name="map-marker-alt" size={20} color={primaryColor} />
-          <Text style={styles.text}>{item.dropoff_location}</Text>
-          {isTwoWay && (
-            <Text style={styles.timeRight}>{formatTime(item.dropoff_time)}</Text>
-          )}
+        {/* Dropoff Row */}
+        <View style={styles.routeRow}>
+          <View style={[styles.routeDot, { backgroundColor: primaryColor }]} />
+          <Text style={styles.locationText}>
+            <Text style={styles.locationLabel}>Dropoff: </Text>
+            {item.dropoff_location}
+          </Text>
+          {dropoffTime && <Text style={styles.timeText}>{dropoffTime}</Text>}
         </View>
 
-        {recurringDays.length > 0 && (
-          <View style={styles.daysContainer}>
-            {recurringDays.map((day, index) => (
-              <View key={index} style={styles.dayBadge}>
-                <Text style={styles.dayText}>{day.trim()}</Text>
+        {/* Recurring Days */}
+        {renderRecurringDays(item.recurring_days)}
+
+        {/* Preferences */}
+        {showPreferences && (
+          <View style={{ marginTop: 8 }}>
+            <Text style={styles.sectionHeading}>Preferences</Text>
+            {preferences.map((pref, index) => (
+              <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                {pref.icon}
+                <Text style={{ fontSize: 13, color: '#555', marginLeft: 6 }}>{pref.label}</Text>
               </View>
             ))}
           </View>
         )}
 
-        <View style={styles.btnRow}>
-          <TouchableOpacity onPress={() => handleDelete(item.carpool_profile_id)} style={styles.deleteBtn}>
-            <MaterialIcons name="delete" size={20} color="white" />
-          </TouchableOpacity>
+        {/* Special Requests */}
+        {item.special_requests && (
+          <View style={{ marginTop: 8 }}>
+            <Text style={styles.sectionHeading}>Special Request</Text>
+            <Text style={{ fontSize: 13, color: '#555' }}>{item.special_requests}</Text>
+          </View>
+        )}
 
-          <TouchableOpacity onPress={() => setSelectedProfile(item)} style={styles.seeFullBtn}>
-            <Text style={styles.seeFullText}>See Full</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+        {/* Footer with Actions */}
+        <View style={styles.cardFooter}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Delete Button */}
+            <TouchableOpacity
+              onPress={() => handleDelete(item.carpool_profile_id)}
+              disabled={isDeleting && deletingId === item.carpool_profile_id}
+              style={styles.deleteBtn}
+            >
+              {isDeleting && deletingId === item.carpool_profile_id ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <MaterialIcons name="delete" size={16} color="white" />
+                  <Text style={styles.deleteBtnText}>Delete</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-  const renderModal = () => {
-    if (!selectedProfile) return null;
-
-    const {
-      route_type,
-      pickup_location,
-      dropoff_location,
-      pickup_time,
-      dropoff_time,
-      recurring_days,
-      date,
-      smoking_preference,
-      music_preference,
-      conversation_preference,
-      allows_luggage,
-      is_recurring,
-      special_requests
-    } = selectedProfile;
-
-    const isTwoWay = route_type === 'Two Way';
-
-    const formatDate = (dateStr) => {
-      if (!dateStr) return null;
-      const d = new Date(dateStr);
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    };
-
-    const shortDays = recurring_days?.split(',').map(day => day.trim().slice(0, 3)) || [];
-
-    return (
-      <Modal visible transparent animationType="fade">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContentWrapper}>
-            <Animatable.View animation="zoomIn" duration={300} style={styles.modalContentWrapper}>
-              <ScrollView contentContainerStyle={styles.modalContent}>
-                <View style={styles.routeTypeBadge}>
-                  <Text style={styles.routeTypeText}>{route_type || 'One Way'}</Text>
-                </View>
-
-                <View style={styles.card}>
-                  <Text style={styles.sectionHeading}>Route</Text>
-                  <View style={styles.row}>
-                    <FontAwesome5 name="dot-circle" size={18} color={primaryColor} />
-                    <Text style={styles.text}>{pickup_location}</Text>
-                    <Text style={styles.timeRight}>{formatTime(pickup_time)}</Text>
-                  </View>
-
-                  <View style={styles.arrowRow}>
-                    <Ionicons name={isTwoWay ? 'swap-vertical' : 'arrow-down'} size={20} color="#555" />
-                  </View>
-
-                  <View style={styles.row}>
-                    <FontAwesome5 name="map-marker-alt" size={18} color={primaryColor} />
-                    <Text style={styles.text}>{dropoff_location}</Text>
-                    {isTwoWay && (
-                      <Text style={styles.timeRight}>{formatTime(dropoff_time)}</Text>
-                    )}
-                  </View>
-                </View>
-
-                {shortDays.length > 0 && (
-                  <View style={[styles.card, { marginTop: 16 }]}>
-                    <Text style={styles.sectionHeading}>Days</Text>
-                    <View style={styles.daysContainer}>
-                      {shortDays.map((day, idx) => (
-                        <View key={idx} style={styles.dayBadge}>
-                          <Text style={styles.dayText}>{day}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {date && (
-                  <View style={[styles.card, { marginTop: 16 }]}>
-                    <Text style={styles.sectionHeading}>Start Date</Text>
-                    <Text style={styles.modalText}>{formatDate(date)}</Text>
-                  </View>
-                )}
-
-                <View style={[styles.card, { marginTop: 16 }]}>
-                  <Text style={styles.sectionHeading}>Preferences</Text>
-                  <Text style={styles.modalText}>🚬 Smoking: {smoking_preference}</Text>
-                  <Text style={styles.modalText}>🎵 Music: {music_preference}</Text>
-                  <Text style={styles.modalText}>🗣️ Conversation: {conversation_preference}</Text>
-                  <Text style={styles.modalText}>🧳 Luggage: {allows_luggage ? 'Allowed' : 'Not Allowed'}</Text>
-                  <Text style={styles.modalText}>🔁 Recurring: {is_recurring ? 'Yes' : 'No'}</Text>
-                </View>
-
-                {special_requests && (
-                  <View style={[styles.card, { marginTop: 16 }]}>
-                    <Text style={styles.sectionHeading}>Special Request</Text>
-                    <Text style={styles.modalText}>{special_requests}</Text>
-                  </View>
-                )}
-              </ScrollView>
-              {/* Use Button (FIXED at bottom) */}
-              <TouchableOpacity
-                style={styles.useBtnFixed}
-                onPress={() => {
-                  navigation.navigate("CarpoolProfile", {
-                    userId, passengerId,
-                    profileId: selectedProfile.carpool_profile_id,
-                    distanceKm: selectedProfile.distance_km
-                  });
-                  setSelectedProfile(null);
-                }}
-              >
-                <Text style={styles.useBtnText}>Use this Profile</Text>
-              </TouchableOpacity>
-
-              {/* Close (X) icon */}
-              <TouchableOpacity onPress={() => setSelectedProfile(null)} style={styles.crossIcon}>
-                <Ionicons name="close" size={26} color="#333" />
-              </TouchableOpacity>
-            </Animatable.View>
+            {/* Use Profile Button */}
+            <TouchableOpacity
+              style={styles.useBtn}
+              onPress={() => {
+                navigation.navigate("CarpoolProfile", {
+                  userId,
+                  passengerId,
+                  profileId: item.carpool_profile_id,
+                  distanceKm: item.distance_km
+                });
+              }}
+            >
+              <Text style={styles.useBtnText}>Use Profile</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </View>
     );
   };
 
@@ -312,16 +283,15 @@ const CarpoolProfileList = ({ route, navigation }) => {
           data={profiles}
           keyExtractor={(item) => item.carpool_profile_id.toString()}
           renderItem={renderCard}
-          contentContainerStyle={{ padding: 20, flexGrow: 1 }}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
-              {/* Animated SAHELI text - Moved to top */}
               <Animated.Text style={[
                 styles.saheliText,
                 {
                   opacity: fadeAnim,
                   transform: [{ scale: scaleAnim }],
-                  zIndex: 10, // Ensure it stays on top
+                  zIndex: 10,
                 }
               ]}>
                 {displayedText}
@@ -331,7 +301,7 @@ const CarpoolProfileList = ({ route, navigation }) => {
                 source={require('../../assets/pinkCar.json')}
                 autoPlay
                 loop
-                style={{ width: 200, height: 200, marginTop: -30 }} // Adjust positioning
+                style={{ width: 200, height: 200, marginTop: -30 }}
               />
 
               <Text style={styles.emptyText}>
@@ -345,7 +315,6 @@ const CarpoolProfileList = ({ route, navigation }) => {
           }}
           refreshing={refreshing}
         />
-        {renderModal()}
       </View>
     </SafeAreaView>
   );
@@ -366,12 +335,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 15
   },
+  listContent: { paddingHorizontal: 15, paddingBottom: 20 },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 50,
-    position: 'relative', // Important for z-index to work
+    position: 'relative',
   },
   saheliText: {
     fontSize: 34,
@@ -382,9 +352,9 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.15)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
-    position: 'absolute', // Position absolutely to avoid layout conflicts
-    top: 50, // Adjust as needed
-    zIndex: 10, // Ensure it stays on top
+    position: 'absolute',
+    top: 50,
+    zIndex: 10,
   },
   emptyText: {
     fontSize: 16,
@@ -393,29 +363,132 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 20
   },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginVertical: 8,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#eee'
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  cardDate: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500'
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderColor:primaryColor,
+    borderWidth:1,
+    alignSelf: 'flex-start',
+    shadowColor: primaryColor,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 6,
 
-  card: { backgroundColor: '#fff', borderRadius: 10, padding: 16, marginBottom: 16, elevation: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  arrowRow: { alignItems: 'left', marginVertical: 4, marginLeft: 24 },
-  text: { marginLeft: 8, fontSize: 16, color: '#333', maxWidth: '60%' },
-  timeRight: { marginLeft: 'auto', fontSize: 14, color: '#555' },
-  daysContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 6 },
-  dayBadge: { backgroundColor: primaryColor, borderRadius: 20, paddingVertical: 4, paddingHorizontal: 10 },
-  dayText: { color: '#fff', fontSize: 13 },
-  btnRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  deleteBtn: { backgroundColor: '#D64584', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
-  seeFullBtn: { backgroundColor: primaryColor, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 5 },
-  seeFullText: { color: '#fff', fontSize: 14 },
-  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center' },
-  modalContentWrapper: { flex: 1, backgroundColor: 'white', margin: 20, borderRadius: 10, overflow: 'hidden', elevation: 5 },
-  modalContent: { backgroundColor: 'white', padding: 20, paddingBottom: 80 },
-  modalText: { fontSize: 14, marginBottom: 6, color: '#333' },
-  sectionHeading: { fontSize: 16, fontWeight: 'bold', color: primaryColor, marginBottom: 8 },
-  routeTypeBadge: { backgroundColor: primaryColor, alignSelf: 'center', paddingVertical: 6, paddingHorizontal: 16, borderRadius: 20, marginBottom: 16 },
-  routeTypeText: { color: '#fff', fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase' },
-  useBtnFixed: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: primaryColor, padding: 15, alignItems: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 },
-  useBtnText: { color: 'white', fontWeight: 'bold' },
-  crossIcon: { position: 'absolute', top: 15, right: 15, zIndex: 100 }
+  },
+  badgeText: {
+    color: primaryColor,
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 8
+  },
+  routeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#4CAF50'
+  },
+  locationLabel: {
+    fontWeight: '600',
+    color: '#666'
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#000',
+    flexWrap: 'wrap'
+  },
+  timeText: {
+    fontSize: 13,
+    color: '#666'
+  },
+  sectionHeading: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: primaryColor,
+    marginBottom: 6
+  },
+  dayCircle: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: primaryColor,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginRight: 6,
+    marginTop: 4,
+    shadowColor: primaryColor,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  dayText: {
+    color: primaryColor,
+    fontSize: 10,
+    fontWeight: '600'
+  },
+  cardFooter: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee'
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e00f00ff',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    gap: 6
+  },
+  deleteBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14
+  },
+  useBtn: {
+    backgroundColor: primaryColor,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6
+  },
+  useBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14
+  }
 });
 
 export default CarpoolProfileList;
