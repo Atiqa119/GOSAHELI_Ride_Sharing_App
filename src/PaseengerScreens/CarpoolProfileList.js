@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, Modal,
-  StyleSheet, ActivityIndicator, ScrollView, Alert
+  StyleSheet, ActivityIndicator, ScrollView, Alert, Animated
 } from 'react-native';
 import { Ionicons, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { API_URL, getUserCarpoolProfiles } from '../../api';
+import LottieView from 'lottie-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'react-native';
 import * as Animatable from 'react-native-animatable';
@@ -13,11 +14,55 @@ import axios from 'axios';
 const primaryColor = '#D64584';
 
 const CarpoolProfileList = ({ route, navigation }) => {
-  const { userId,passengerId } = route.params || {};
+  const { userId, passengerId } = route.params || {};
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState(null);
+
+
+  const fullText = 'SAHELI';
+  const [displayedText, setDisplayedText] = useState('');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    let index = 0;
+    const letterDelay = 600; // ms per letter (adjust to fit Lottie duration)
+
+    const animateLetter = () => {
+      setDisplayedText(fullText.slice(0, index + 1));
+      fadeAnim.setValue(0);
+      scaleAnim.setValue(1);
+
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 6,
+          useNativeDriver: true,
+        })
+      ]).start(() => {
+        index++;
+        if (index < fullText.length) {
+          setTimeout(animateLetter, letterDelay);
+        } else {
+          // Wait for Lottie loop to finish
+          setTimeout(() => {
+            index = 0;
+            setDisplayedText('');
+            animateLetter();
+          }, 1500); // Pause before restarting
+        }
+      });
+    };
+
+    animateLetter();
+  }, []);
 
   const formatTime = (timeStr) => {
     if (!timeStr) return 'N/A';
@@ -232,7 +277,7 @@ const CarpoolProfileList = ({ route, navigation }) => {
                 style={styles.useBtnFixed}
                 onPress={() => {
                   navigation.navigate("CarpoolProfile", {
-                    userId,passengerId,
+                    userId, passengerId,
                     profileId: selectedProfile.carpool_profile_id,
                     distanceKm: selectedProfile.distance_km
                   });
@@ -270,8 +315,28 @@ const CarpoolProfileList = ({ route, navigation }) => {
           contentContainerStyle={{ padding: 20, flexGrow: 1 }}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
-              <Ionicons name="car-outline" size={48} color="#D64584" />
-              <Text style={styles.emptyText}>You have not created any carpool profiles yet.</Text>
+              {/* Animated SAHELI text - Moved to top */}
+              <Animated.Text style={[
+                styles.saheliText,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ scale: scaleAnim }],
+                  zIndex: 10, // Ensure it stays on top
+                }
+              ]}>
+                {displayedText}
+              </Animated.Text>
+
+              <LottieView
+                source={require('../../assets/pinkCar.json')}
+                autoPlay
+                loop
+                style={{ width: 200, height: 200, marginTop: -30 }} // Adjust positioning
+              />
+
+              <Text style={styles.emptyText}>
+                You have not created any carpool profiles yet.
+              </Text>
             </View>
           )}
           onRefresh={() => {
@@ -305,7 +370,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 50
+    paddingTop: 50,
+    position: 'relative', // Important for z-index to work
+  },
+  saheliText: {
+    fontSize: 34,
+    fontWeight: 'bold',
+    color: '#D64584',
+    marginBottom: 12,
+    letterSpacing: 3,
+    textShadowColor: 'rgba(0,0,0,0.15)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+    position: 'absolute', // Position absolutely to avoid layout conflicts
+    top: 50, // Adjust as needed
+    zIndex: 10, // Ensure it stays on top
   },
   emptyText: {
     fontSize: 16,
@@ -314,6 +393,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingHorizontal: 20
   },
+
   card: { backgroundColor: '#fff', borderRadius: 10, padding: 16, marginBottom: 16, elevation: 2 },
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   arrowRow: { alignItems: 'left', marginVertical: 4, marginLeft: 24 },

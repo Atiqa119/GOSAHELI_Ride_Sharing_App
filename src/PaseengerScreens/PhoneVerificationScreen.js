@@ -34,59 +34,20 @@ export default function PhoneVerificationScreen({ route, navigation }) {
     }
   };
 
-  const verifyOTPAndSignup = async () => {
+  const verifyOTP = async () => {
     setLoading(true);
     try {
       const credential = PhoneAuthProvider.credential(verificationId, code);
       await signInWithCredential(auth, credential);
-
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-
-     await updateProfile(userCredential.user, {
-  displayName: userName,
-});
-
-      // ✅ Save to PostgreSQL
-    const response = await axios.post(USER_ENDPOINT, {
-  email,
-  username: userName,  // ✅ Correct key sent to backend, correct value used
-  password,
-  phoneNo,
-});
-// Now fetch the user from PostgreSQL by email to get UserID
-    const getUserResponse = await axios.get(`${USER_ENDPOINT}`, {
-      params: { email: email }
-    });
-
-    if (getUserResponse.data.length > 0) {
-      const dbUser = getUserResponse.data[0];  // assuming the first user is correct
-      const dbUserId = dbUser.UserID;          // Your PostgreSQL UserID column
-
-       // Add your success console log here:
-      console.log(`Signup Successful! Name: ${userName}, Email: ${email}, Phone: ${phoneNo}`);
-
-      console.log('USERID :', dbUserId);
-
-
-    
-
-    Alert.alert('Success', 'Phone verified and account created!', [
-  {
-    text: 'Continue',
-    onPress: () => navigation.replace('Home', {
-
-      userName: userName, // ✅ pass to Home screen
-       userId: dbUserId,
       
-       
-    }),
-  },
-]);
-} else {
-      throw new Error('User not found after signup.');
-    }
-
-
+      // Navigate to CameraCapture screen for gender verification
+      navigation.replace('CameraCapture', {
+        email,
+        userName,
+        password,
+        phoneNo
+      });
+      
     } catch (error) {
       console.error('Verification error:', error);
       Alert.alert('Error', 'Verification failed. Please check the code and try again.');
@@ -114,8 +75,8 @@ export default function PhoneVerificationScreen({ route, navigation }) {
         maxLength={6}
       />
 
-      <TouchableOpacity style={styles.button} onPress={verifyOTPAndSignup} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify & Sign Up</Text>}
+      <TouchableOpacity style={styles.button} onPress={verifyOTP} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity onPress={sendOTP}>

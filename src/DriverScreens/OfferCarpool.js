@@ -482,7 +482,6 @@ export default function OfferCarpool({ navigation, route }) {
                   <View key={index} style={styles.offerCard}>
                     {/* Card Header */}
                     <View style={styles.cardHeader}>
-                      <Text style={styles.cardDate}>DATE: {formattedDate}</Text>
                       <TouchableOpacity
                         style={[styles.badge, { backgroundColor: '#da0202ff' }]}
                         onPress={() => confirmDelete(offer.CarpoolOfferID)}                      >
@@ -724,6 +723,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    marginLeft:270,
   },
   badgeText: {
     color: '#fff',

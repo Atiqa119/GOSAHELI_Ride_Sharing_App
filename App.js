@@ -86,7 +86,7 @@ Notifications.setNotificationHandler({
           <Stack.Screen name="LandingActivity" component={LandingActivity} options={{ headerShown: false }} />
           <Stack.Screen name="Signup" component={Signup} options={{ headerShown: false }} />
           <Stack.Screen name="PhoneVerificationScreen" component={PhoneVerificationScreen} />
-          <Stack.Screen name="CameraCapture" component={CameraCapture} />
+          <Stack.Screen name="CameraCapture" component={CameraCapture} options={{ headerShown: false }}/>
           <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
           <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
           <Stack.Screen name="Home" component={Home} options={{ headerShown: false }} />

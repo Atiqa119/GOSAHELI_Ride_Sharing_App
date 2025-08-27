@@ -1,158 +1,169 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { Camera } from 'expo-camera';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from "react";
+import { View, Text, Button, Image, ActivityIndicator, StyleSheet, Alert } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth } from "../firebase/setup";
+import axios from "axios";
+import { API_URL as BASE_URL } from "../../api.js";
 
-export default function CameraCapture({ navigation }) {
-  const cameraRef = useRef(null);
-  const [hasPermission, setHasPermission] = useState(null);
+const USER_ENDPOINT = `${BASE_URL}/user`;
+
+export default function CameraCapture({ route, navigation }) {
+  const { email, userName, password, phoneNo } = route.params;
+  const [image, setImage] = useState(null);
+  const [gender, setGender] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [attemptCount, setAttemptCount] = useState(0);
-  const [detectionActive, setDetectionActive] = useState(false);
 
-  // Ask for camera permission on mount
+  const API_KEY = "Pu8E95qZxx5k-FENZFArK4AqxKsuQ5Un";
+  const API_SECRET = "ERQP089xe3qvDRmg7csqqWy0Ew7G-qBr";
+
   useEffect(() => {
     (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status === 'granted');
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Camera access is needed to take pictures.");
+      }
     })();
   }, []);
 
-  // Start auto-detection when camera is ready
-  useEffect(() => {
-    if (hasPermission && !detectionActive) {
-      const timer = setTimeout(() => {
-        setDetectionActive(true);
-        takePicture();
-      }, 1000); // Wait 1 second for camera to initialize
-
-      return () => clearTimeout(timer);
+  const openCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Denied", "Camera access is required!");
+      return;
     }
-  }, [hasPermission, detectionActive]);
 
-  const takePicture = async () => {
-    if (!cameraRef.current || loading) return;
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
 
-    setLoading(true);
-
-    try {
-      const photo = await cameraRef.current.takePictureAsync({ base64: true });
-
-      if (!photo.base64) {
-        handleError('Failed to capture image.');
-        return;
-      }
-
-      await checkGender(photo.base64);
-    } catch (error) {
-      console.error('Camera Error:', error);
-      handleError('Failed to take picture.');
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setImage(uri);
+      detectGender(uri);
     }
   };
 
-  const handleError = (message) => {
-    setLoading(false);
-    setAttemptCount(prev => prev + 1);
-
-    if (attemptCount >= 2) {
-      Alert.alert('Verification Failed', 'Maximum attempts reached. Only female users are allowed.', [
-        { text: 'OK', onPress: () => navigation.replace('Login') }
-      ]);
-    } else {
-      Alert.alert('Error', message, [
-        { 
-          text: 'Try Again', 
-          onPress: () => {
-            setDetectionActive(true);
-            takePicture();
-          }
-        }
-      ]);
-    }
-  };
-
-  const checkGender = async (base64) => {
-    const formData = new FormData();
-    formData.append('api_key', 'Pu8E95qZxx5k-FENZFArK4AqxKsuQ5Un');
-    formData.append('api_secret', 'ERQP089xe3qvDRmg7csqqWy0Ew7G-qBr');
-    formData.append('image_base64', base64);
-    formData.append('return_attributes', 'gender');
-
+  const detectGender = async (uri) => {
     try {
-      const response = await fetch('https://api-us.faceplusplus.com/facepp/v3/detect', {
-        method: 'POST',
-        body: formData,
+      setLoading(true);
+
+      const formData = new FormData();
+      formData.append("api_key", API_KEY);
+      formData.append("api_secret", API_SECRET);
+      formData.append("return_attributes", "gender,age");
+      formData.append("image_file", {
+        uri,
+        type: "image/jpeg",
+        name: "photo.jpg",
       });
 
-      const result = await response.json();
+      const response = await fetch("https://api-us.faceplusplus.com/facepp/v3/detect", {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
-      if (!result.faces || result.faces.length === 0) {
-        handleError('No face detected. Try again.');
-        return;
-      }
+      const data = await response.json();
+      console.log("API Response:", data);
 
-      const gender = result.faces[0].attributes.gender.value;
-
-      if (gender === 'Female') {
-        setLoading(false);
-        navigation.replace('Home');
+      if (data.faces && data.faces.length > 0) {
+        const face = data.faces[0];
+        if (face.attributes && face.attributes.gender) {
+          const detectedGender = face.attributes.gender.value;
+          setGender(detectedGender);
+          
+          if (detectedGender === "Female") {
+            await registerUser();
+          } else {
+            Alert.alert("Registration Failed", "Only females can register in this app.");
+            setTimeout(() => {
+              navigation.replace("Login");
+            }, 2000);
+          }
+        } else {
+          Alert.alert("Error", "Gender not detected, try another photo.");
+        }
       } else {
-        handleError('Only female users are allowed.');
+        Alert.alert("Error", "No face detected in the photo.");
       }
     } catch (error) {
-      console.error('Face++ Error:', error);
-      handleError('Gender verification failed.');
+      console.error(error);
+      Alert.alert("Error", "Something went wrong!");
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (hasPermission === null) {
-    return <View style={styles.centered}><Text>Requesting Camera Permission...</Text></View>;
-  }
+  const registerUser = async () => {
+    try {
+      // Create user in Firebase
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(userCredential.user, {
+        displayName: userName,
+      });
 
-  if (hasPermission === false) {
-    return <View style={styles.centered}><Text>No access to camera</Text></View>;
-  }
+      // Save to PostgreSQL
+      const response = await axios.post(USER_ENDPOINT, {
+        email,
+        username: userName,
+        password,
+        phoneNo,
+      });
+      
+      // Get user ID from PostgreSQL
+      const getUserResponse = await axios.get(`${USER_ENDPOINT}`, {
+        params: { email: email }
+      });
+
+      if (getUserResponse.data.length > 0) {
+        const dbUser = getUserResponse.data[0];
+        const dbUserId = dbUser.UserID;
+
+        console.log(`Signup Successful! Name: ${userName}, Email: ${email}, Phone: ${phoneNo}`);
+        console.log('USERID :', dbUserId);
+
+        Alert.alert('Success', 'Registration completed successfully!', [
+          {
+            text: 'Continue',
+            onPress: () => navigation.replace('Home', {
+              userName: userName,
+              userId: dbUserId,
+            }),
+          },
+        ]);
+      } else {
+        throw new Error('User not found after signup.');
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      Alert.alert('Error', 'Registration failed. Please try again.');
+    }
+  };
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <Camera 
-        ref={cameraRef} 
-        style={styles.camera} 
-      />
-
-      {loading && <ActivityIndicator style={styles.loading} size="large" color="#D64584" />}
+    <View style={styles.container}>
+      <Text style={styles.title}>Gender Verification</Text>
+      <Text style={styles.subtitle}>We need to verify your gender to complete registration</Text>
       
-      <View style={styles.overlay}>
-        <Text style={styles.overlayText}>Position your face in the frame</Text>
-      </View>
-    </SafeAreaView>
+      <Button title="Take Photo" onPress={openCamera} />
+      
+      {image && <Image source={{ uri: image }} style={styles.image} />}
+      {loading && <ActivityIndicator size="large" color="#d63384" />}
+      {gender && <Text style={styles.result}>Detected Gender: {gender}</Text>}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  camera: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loading: {
-    position: 'absolute',
-    top: '50%',
-    alignSelf: 'center',
-  },
-  overlay: {
-    position: 'absolute',
-    top: 50,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 10,
-    borderRadius: 10,
-  },
-  overlayText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
+  container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  title: { fontSize: 22, fontWeight: "bold", marginBottom: 10 },
+  subtitle: { fontSize: 16, color: "#666", marginBottom: 20, textAlign: "center" },
+  image: { width: 250, height: 250, marginTop: 20, borderRadius: 10 },
+  result: { fontSize: 20, marginTop: 20, color: "#d63384", fontWeight: "bold" },
 });
