@@ -182,7 +182,9 @@ router.post('/create-status-request', async (req, res) => {
     is_recurring,
     recurring_days,
     special_requests,
-    route_type
+    route_type,
+    end_date
+
   } = req.body;
 
   try {
@@ -209,12 +211,13 @@ router.post('/create-status-request', async (req, res) => {
         special_requests,
         route_type,
         fare,
-        distance_km
+        distance_km,
+        end_date
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15,
-        $16, $17, $18, $19,$20,$21
+        $16, $17, $18, $19,$20,$21,$22
       )
       RETURNING *;
       `,
@@ -239,7 +242,9 @@ router.post('/create-status-request', async (req, res) => {
         special_requests,
         route_type,
         req.body.fare || null,
-        req.body.distance_km || null  // Add distance
+        req.body.distance_km || null , // Add distance
+        end_date
+
 
       ]
     );
