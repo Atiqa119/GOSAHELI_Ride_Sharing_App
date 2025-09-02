@@ -450,7 +450,8 @@ const DriverCarpoolStatusScreen = ({ route }) => {
 
   const renderRequestCard = (item, key, isMatched = false, tabContext = 'Requests') => {
 
-    const formattedDate = formatDate(item.date);
+    const formattedStartDate = formatDate(item.date);
+        const formattedEndDate = item.end_date ? formatDate(item.date) : null;
     const pickupTime = formatTime(item.pickup_time);
     const dropoffTime = formatTime(item.dropoff_time);
     const routeType = (item.route_type || '').toLowerCase(); // "one way" or "two way"
@@ -515,10 +516,23 @@ const DriverCarpoolStatusScreen = ({ route }) => {
     return (
       <View style={styles.card} key={key}>
         {/* Header */}
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardDate}>DATE START: {formattedDate}</Text>
-          {renderStatusBadge(item.status)}
-        </View>
+       <View style={styles.statusRow}>
+             {renderStatusBadge(item.status)}
+           </View>
+       
+           {/* Second Row: Dates */}
+           <View style={styles.dateRow}>
+             <View style={styles.dateContainer}>
+               <Text style={styles.dateLabel}>From:</Text>
+               <Text style={styles.dateValue}>{formattedStartDate}</Text>
+             </View>
+             {formattedEndDate && (
+               <View style={styles.dateContainer}>
+                 <Text style={styles.dateLabel}>To:</Text>
+                 <Text style={styles.dateValue}>{formattedEndDate}</Text>
+               </View>
+             )}
+           </View>
 
         {/* Pickup */}
         <View style={styles.routeRow}>
@@ -1140,6 +1154,37 @@ const styles = StyleSheet.create({
     elevation: 6,
     borderWidth: 1,
     borderColor: '#eee'
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  
+  dateContainer: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  
+  dateLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  
+  dateValue: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: '600',
   },
   cardHeader: {
     flexDirection: 'row',

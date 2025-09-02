@@ -500,7 +500,8 @@ const CarpoolStatusScreen = ({ route }) => {
 
   const renderCard = ({ item }) => {
 
-    const formattedDate = moment(item.date).format('DD-MM-YYYY');
+    const formattedStartDate = moment(item.date).format('DD-MM-YYYY');
+    const formattedEndDate = item.end_date ? moment(item.end_date).format('DD-MM-YYYY') : null;
     const pickupTime = moment(item.pickup_time, 'HH:mm:ss').format('hh:mm A');
     const dropoffTime = item.dropoff_time ? moment(item.dropoff_time, 'HH:mm:ss').format('hh:mm A') : null;
     // Inside renderCard function
@@ -547,10 +548,26 @@ const CarpoolStatusScreen = ({ route }) => {
 
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardDate}>Start From:  {formattedDate}</Text>
-          {renderStatusBadge(item.status)}
+          {/* First Row: Status */}
+    <View style={styles.statusRow}>
+      {renderStatusBadge(item.status)}
+    </View>
+
+    {/* Second Row: Dates */}
+    <View style={styles.dateRow}>
+      <View style={styles.dateContainer}>
+        <Text style={styles.dateLabel}>From:</Text>
+        <Text style={styles.dateValue}>{formattedStartDate}</Text>
+      </View>
+      {formattedEndDate && (
+        <View style={styles.dateContainer}>
+          <Text style={styles.dateLabel}>To:</Text>
+          <Text style={styles.dateValue}>{formattedEndDate}</Text>
         </View>
+      )}
+    </View>
+    
+       
 
         {/* Pickup Row */}
         <View style={styles.routeRow}>
@@ -802,7 +819,7 @@ const CarpoolStatusScreen = ({ route }) => {
             borderBottomColor: '#eee', marginBottom: 15
           }}>
             <Text style={[styles.actionButtonText, { color: primaryColor, marginTop: 10, marginBottom: 10 }]}>
-              Fare (per day): {displayFare}
+              Total Fare : {displayFare}
             </Text>
           </View>
 
@@ -971,7 +988,37 @@ const styles = StyleSheet.create({
     shadowRadius: 4, elevation: 3, borderWidth: 1, borderColor: '#eee'
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  cardDate: { fontSize: 14, color: '#666', fontWeight: '500' },
+statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  
+  dateContainer: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  
+  dateLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  
+  dateValue: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: '600',
+  },
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, alignSelf: 'flex-start' },
   badgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   routeRow: {

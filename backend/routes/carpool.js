@@ -66,6 +66,7 @@ router.post('/save-profile', async (req, res) => {
       recurring_days,
       special_requests,
       route_type,
+      end_date,
       fare
     } = req.body;
 
@@ -89,8 +90,9 @@ router.post('/save-profile', async (req, res) => {
     special_requests,
     route_type,
     fare,
-    distance_km
-  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,$16,$17)
+    distance_km,
+    end_date
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,$16,$17, $18)
   RETURNING carpool_profile_id;
 `;
 
@@ -111,7 +113,8 @@ router.post('/save-profile', async (req, res) => {
       special_requests || null,
       route_type,
       req.body.fare || null,
-      req.body.distance_km || null  // Add distance
+      req.body.distance_km || null,  // Add distance
+      req.body.end_date || null,
 
     ];
 
@@ -466,6 +469,7 @@ rating_summary AS (
         crs.conversation_preference,
         crs.allows_luggage,
         crs.distance_km,
+        crs.end_date,
         d."DriverID",
         d."UserID" AS driver_user_id,
         u.username AS driver_name,
@@ -524,7 +528,7 @@ rating_summary AS (
 });
 
 
-// PATCH /api/carpool/update-status/:requestId
+// ✅ Update carpool request's Status 
 router.patch('/update-status/:requestId', async (req, res) => {
   const { requestId } = req.params;
   const { status } = req.body;

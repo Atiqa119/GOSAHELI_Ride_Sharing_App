@@ -74,6 +74,18 @@ const CarpoolProfile = () => {
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+  // Calculate fare only once after 2 seconds
+  useEffect(() => {
+    if (isInitialized) {
+      const timer = setTimeout(() => {
+        calculateFare();
+      }, 1000);
+
+      return () => clearTimeout(timer); 
+    }
+  }, [isInitialized]); 
+
+
   // Initialize with saved profile or existing request
   useEffect(() => {
     const initializeForm = async () => {
@@ -91,7 +103,7 @@ const CarpoolProfile = () => {
             dropoff: requestData.dropoff_location,
             seatsNeeded: requestData.seats.toString(),
             date: new Date(requestData.date),
-            end_date: new Date(requestData.date),
+            end_date: requestData.end_date ? new Date(requestData.end_date) : new Date(requestData.date),
             smoking: requestData.smoking_preference,
             music: requestData.music_preference,
             conversation: requestData.conversation_preference,
@@ -107,8 +119,10 @@ const CarpoolProfile = () => {
             setDropOffTime(new Date(`1970-01-01T${requestData.dropoff_time}`));
           }
 
-          // Pre-calculate fare for the existing request
-          setTimeout(calculateFare, 100);
+          setTimeout(() => {
+            setIsInitialized(true);
+            calculateFare();
+          }, 100);
         } catch (error) {
           console.error('Error fetching request:', error);
           Alert.alert("Error", "Failed to load request data");
@@ -126,7 +140,7 @@ const CarpoolProfile = () => {
             dropoff: profile.dropoff_location,
             seatsNeeded: profile.seats.toString(),
             date: new Date(profile.date),
-            end_date: new Date(profile.date),
+            end_date: profile.end_date ? new Date(profile.end_date) : new Date(profile.date),
             smoking: profile.smoking_preference,
             music: profile.music_preference,
             conversation: profile.conversation_preference,
@@ -144,8 +158,12 @@ const CarpoolProfile = () => {
             setDropOffTime(new Date(`1970-01-01T${profile.dropoff_time}`));
           }
 
-          // Pre-calculate fare for the profile
-          setTimeout(calculateFare, 100);
+          // Force a fare calculation after state is updated
+          setTimeout(() => {
+            setIsInitialized(true);
+            calculateFare();
+          }, 100);
+
         } catch (error) {
           console.error('Error fetching profile:', error);
           Alert.alert("Error", "Failed to load profile data");
@@ -183,8 +201,10 @@ const CarpoolProfile = () => {
           end_date: incomingState.date ? new Date(incomingState.end_date) : prev.end_date
         }));
 
-        // Calculate fare for new request
-        setTimeout(calculateFare, 100);
+        setTimeout(() => {
+          setIsInitialized(true);
+          calculateFare();
+        }, 100);
       }
 
       setIsInitialized(true);
@@ -196,171 +216,171 @@ const CarpoolProfile = () => {
   }, [pickupLocation, dropoffLocation, profileId, isInitialized, route.params?.formState, isEditing, requestId]);
 
   // Calculate fare whenever seats, time, route type, distance, OR selected days change
-useEffect(() => {
-  calculateFare();
-}, [request.seatsNeeded, pickupTime, dropOffTime, routeType, distanceKm, request.daysOfWeek, request.date, request.end_date, request.recurring]);
- const calculateFare = () => {
-  setIsCalculating(true);
+  useEffect(() => {
+    calculateFare();
+  }, [request.seatsNeeded, pickupTime, dropOffTime, routeType, distanceKm, request.daysOfWeek, request.date, request.end_date, request.recurring]);
+  const calculateFare = () => {
+    setIsCalculating(true);
 
-  const dist = Number(distanceKm);
-  if (isNaN(dist) || dist <= 0) {
-    Alert.alert('Error', 'Invalid distance');
-    setIsCalculating(false);
-    return;
-  }
+    const dist = Number(distanceKm);
+    if (isNaN(dist) || dist <= 0) {
+      Alert.alert('Error', 'Invalid distance');
+      setIsCalculating(false);
+      return;
+    }
 
-  const seats = parseInt(request?.seatsNeeded) || 1;
-  if (isNaN(seats) || seats <= 0) {
-    Alert.alert('Error', 'Invalid seat count');
-    setIsCalculating(false);
-    return;
-  }
+    const seats = parseInt(request?.seatsNeeded) || 1;
+    if (isNaN(seats) || seats <= 0) {
+      Alert.alert('Error', 'Invalid seat count');
+      setIsCalculating(false);
+      return;
+    }
 
-  const {
-    FUEL_PRICE_PER_LITER,
-    AVERAGE_MILEAGE,
-    DRIVER_PROFIT_MARGIN,
-    APP_COMMISSION,
-    PEAK_HOUR_SURCHARGE,
-    PEAK_HOURS,
-    BASE_COST_PER_KM,
-    MINIMUM_FARE
-  } = CARPOOL_PRICE_PARAMS;
+    const {
+      FUEL_PRICE_PER_LITER,
+      AVERAGE_MILEAGE,
+      DRIVER_PROFIT_MARGIN,
+      APP_COMMISSION,
+      PEAK_HOUR_SURCHARGE,
+      PEAK_HOURS,
+      BASE_COST_PER_KM,
+      MINIMUM_FARE
+    } = CARPOOL_PRICE_PARAMS;
 
-  const getFareForTime = (rideTime) => {
-    const hour = rideTime.getHours();
-    const isPeakHour = PEAK_HOURS.some(h => hour >= h && hour < h + 2);
+    const getFareForTime = (rideTime) => {
+      const hour = rideTime.getHours();
+      const isPeakHour = PEAK_HOURS.some(h => hour >= h && hour < h + 2);
 
-    // Fuel & Surcharge
-    let baseFuelCost = (dist / AVERAGE_MILEAGE) * FUEL_PRICE_PER_LITER;
-    const peakSurcharge = isPeakHour ? baseFuelCost * PEAK_HOUR_SURCHARGE : 0;
-    const totalFuelCost = baseFuelCost + peakSurcharge;
+      // Fuel & Surcharge
+      let baseFuelCost = (dist / AVERAGE_MILEAGE) * FUEL_PRICE_PER_LITER;
+      const peakSurcharge = isPeakHour ? baseFuelCost * PEAK_HOUR_SURCHARGE : 0;
+      const totalFuelCost = baseFuelCost + peakSurcharge;
 
-    const sharedFuelPerSeat = totalFuelCost / 3;
-    const maintenancePerSeat = dist * BASE_COST_PER_KM;
-    const baseCostPerSeat = sharedFuelPerSeat + maintenancePerSeat;
+      const sharedFuelPerSeat = totalFuelCost / 3;
+      const maintenancePerSeat = dist * BASE_COST_PER_KM;
+      const baseCostPerSeat = sharedFuelPerSeat + maintenancePerSeat;
 
-    const driverProfitPerSeat = baseCostPerSeat * DRIVER_PROFIT_MARGIN;
-    const appCommissionPerSeat = (baseCostPerSeat + driverProfitPerSeat) * APP_COMMISSION;
+      const driverProfitPerSeat = baseCostPerSeat * DRIVER_PROFIT_MARGIN;
+      const appCommissionPerSeat = (baseCostPerSeat + driverProfitPerSeat) * APP_COMMISSION;
 
-    let finalFarePerSeat = baseCostPerSeat + driverProfitPerSeat + appCommissionPerSeat;
-    finalFarePerSeat = Math.max(finalFarePerSeat, MINIMUM_FARE);
+      let finalFarePerSeat = baseCostPerSeat + driverProfitPerSeat + appCommissionPerSeat;
+      finalFarePerSeat = Math.max(finalFarePerSeat, MINIMUM_FARE);
 
-    const totalFare = finalFarePerSeat * seats;
-    const totalDriverEarnings = (baseCostPerSeat + driverProfitPerSeat) * seats;
-    const totalAppCommission = appCommissionPerSeat * seats;
+      const totalFare = finalFarePerSeat * seats;
+      const totalDriverEarnings = (baseCostPerSeat + driverProfitPerSeat) * seats;
+      const totalAppCommission = appCommissionPerSeat * seats;
 
-    return {
-      isPeakHour,
-      baseFuelCost,
-      peakSurcharge,
-      totalFuelCost,
-      sharedFuelPerSeat,
-      maintenancePerSeat,
-      baseCostPerSeat,
-      driverProfitPerSeat,
-      appCommissionPerSeat,
-      finalFarePerSeat,
-      totalFare,
-      totalDriverEarnings,
-      totalAppCommission
+      return {
+        isPeakHour,
+        baseFuelCost,
+        peakSurcharge,
+        totalFuelCost,
+        sharedFuelPerSeat,
+        maintenancePerSeat,
+        baseCostPerSeat,
+        driverProfitPerSeat,
+        appCommissionPerSeat,
+        finalFarePerSeat,
+        totalFare,
+        totalDriverEarnings,
+        totalAppCommission
+      };
     };
-  };
 
-  const pickupFare = getFareForTime(pickupTime);
-  const dropoffFare = routeType === 'Two Way' ? getFareForTime(dropOffTime) : null;
+    const pickupFare = getFareForTime(pickupTime);
+    const dropoffFare = routeType === 'Two Way' ? getFareForTime(dropOffTime) : null;
 
-  const totalFarePerDay = pickupFare.totalFare + (dropoffFare?.totalFare || 0);
-  const totalAppCommissionPerDay = pickupFare.totalAppCommission + (dropoffFare?.totalAppCommission || 0);
-  const totalDriverEarningsPerDay = pickupFare.totalDriverEarnings + (dropoffFare?.totalDriverEarnings || 0);
-  
-  // For display: set finalFare as combined per seat fare (per day, per person)
-  const finalFarePerSeatPerDay = pickupFare.finalFarePerSeat + (dropoffFare?.finalFarePerSeat || 0);
+    const totalFarePerDay = pickupFare.totalFare + (dropoffFare?.totalFare || 0);
+    const totalAppCommissionPerDay = pickupFare.totalAppCommission + (dropoffFare?.totalAppCommission || 0);
+    const totalDriverEarningsPerDay = pickupFare.totalDriverEarnings + (dropoffFare?.totalDriverEarnings || 0);
 
-  // Calculate the number of valid days in the date range
- const countValidDays = () => {
-  const start = new Date(request.date);
-  const end = new Date(request.end_date);
-  
-  // Reset time components to avoid timezone issues
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
-  
-  let count = 0;
-  let current = new Date(start);
-  
-  // If not recurring, count all days in the range (inclusive)
-  if (!request.recurring) {
-    const diffTime = Math.abs(end - start);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end
-    return diffDays;
-  }
-  
-  // If recurring but no days selected, return 0
-  if (request.recurring && (!request.daysOfWeek || request.daysOfWeek.length === 0)) {
-    return 0;
-  }
-  
-  // If recurring, count only selected days
-  const selectedDays = request.daysOfWeek.map(d => d.toLowerCase());
-  
-  while (current <= end) {
-    const weekday = current.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-    if (selectedDays.includes(weekday)) {
-      count++;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  return count;
-};
+    // For display: set finalFare as combined per seat fare (per day, per person)
+    const finalFarePerSeatPerDay = pickupFare.finalFarePerSeat + (dropoffFare?.finalFarePerSeat || 0);
 
-  const matchedDays = countValidDays();
-  const fullRangeDays = Math.floor((request.end_date - request.date) / (1000 * 60 * 60 * 24)) + 1;
+    // Calculate the number of valid days in the date range
+    const countValidDays = () => {
+      const start = new Date(request.date);
+      const end = new Date(request.end_date);
 
-  // Per person for whole duration
-  const totalFarePerPerson = finalFarePerSeatPerDay * matchedDays;
+      // Reset time components to avoid timezone issues
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
 
-  // For all seats
-  const totalFareWithDays = totalFarePerPerson * seats;
+      let count = 0;
+      let current = new Date(start);
 
-  setFareDetails({
-    farePerDay: Math.round(finalFarePerSeatPerDay),       // per seat/day
-    returnFare: dropoffFare ? Math.round(dropoffFare.finalFarePerSeat) : null,
-    totalFare: Math.round(totalFareWithDays),            // total for N days × seats
-    totalDays: matchedDays,                              // number of matched days
-    fullRangeDays,                                       // total days in range
-    totalFarePerPerson: Math.round(totalFarePerPerson),  // total per person
-    driverEarnings: Math.round(totalDriverEarningsPerDay * matchedDays),
-    appCommission: Math.round(totalAppCommissionPerDay * matchedDays),
-    breakdown: {
-      seats,
-      pickup: {
-        isPeakHour: pickupFare.isPeakHour,
-        baseFuelCost: Math.round(pickupFare.baseFuelCost),
-        peakSurcharge: Math.round(pickupFare.peakSurcharge),
-        sharedFuelPerSeat: Math.round(pickupFare.sharedFuelPerSeat),
-        maintenancePerSeat: Math.round(pickupFare.maintenancePerSeat),
-        baseCostPerSeat: Math.round(pickupFare.baseCostPerSeat),
-        driverProfitPerSeat: Math.round(pickupFare.driverProfitPerSeat),
-        appCommissionPerSeat: Math.round(pickupFare.appCommissionPerSeat),
-        finalFarePerSeat: Math.round(pickupFare.finalFarePerSeat)
-      },
-      dropoff: dropoffFare && {
-        isPeakHour: dropoffFare.isPeakHour,
-        baseFuelCost: Math.round(dropoffFare.baseFuelCost),
-        peakSurcharge: Math.round(dropoffFare.peakSurcharge),
-        sharedFuelPerSeat: Math.round(dropoffFare.sharedFuelPerSeat),
-        maintenancePerSeat: Math.round(dropoffFare.maintenancePerSeat),
-        baseCostPerSeat: Math.round(dropoffFare.baseCostPerSeat),
-        driverProfitPerSeat: Math.round(dropoffFare.driverProfitPerSeat),
-        appCommissionPerSeat: Math.round(dropoffFare.appCommissionPerSeat),
-        finalFarePerSeat: Math.round(dropoffFare.finalFarePerSeat)
+      // If not recurring, count all days in the range (inclusive)
+      if (!request.recurring) {
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end
+        return diffDays;
       }
-    }
-  });
 
-  setIsCalculating(false);
-};
+      // If recurring but no days selected, return 0
+      if (request.recurring && (!request.daysOfWeek || request.daysOfWeek.length === 0)) {
+        return 0;
+      }
+
+      // If recurring, count only selected days
+      const selectedDays = request.daysOfWeek.map(d => d.toLowerCase());
+
+      while (current <= end) {
+        const weekday = current.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        if (selectedDays.includes(weekday)) {
+          count++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+      return count;
+    };
+
+    const matchedDays = countValidDays();
+    const fullRangeDays = Math.floor((request.end_date - request.date) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Per person for whole duration
+    const totalFarePerPerson = finalFarePerSeatPerDay * matchedDays;
+
+    // For all seats
+    const totalFareWithDays = totalFarePerPerson * seats;
+
+    setFareDetails({
+      farePerDay: Math.round(finalFarePerSeatPerDay),       // per seat/day
+      returnFare: dropoffFare ? Math.round(dropoffFare.finalFarePerSeat) : null,
+      totalFare: Math.round(totalFareWithDays),            // total for N days × seats
+      totalDays: matchedDays,                              // number of matched days
+      fullRangeDays,                                       // total days in range
+      totalFarePerPerson: Math.round(totalFarePerPerson),  // total per person
+      driverEarnings: Math.round(totalDriverEarningsPerDay * matchedDays),
+      appCommission: Math.round(totalAppCommissionPerDay * matchedDays),
+      breakdown: {
+        seats,
+        pickup: {
+          isPeakHour: pickupFare.isPeakHour,
+          baseFuelCost: Math.round(pickupFare.baseFuelCost),
+          peakSurcharge: Math.round(pickupFare.peakSurcharge),
+          sharedFuelPerSeat: Math.round(pickupFare.sharedFuelPerSeat),
+          maintenancePerSeat: Math.round(pickupFare.maintenancePerSeat),
+          baseCostPerSeat: Math.round(pickupFare.baseCostPerSeat),
+          driverProfitPerSeat: Math.round(pickupFare.driverProfitPerSeat),
+          appCommissionPerSeat: Math.round(pickupFare.appCommissionPerSeat),
+          finalFarePerSeat: Math.round(pickupFare.finalFarePerSeat)
+        },
+        dropoff: dropoffFare && {
+          isPeakHour: dropoffFare.isPeakHour,
+          baseFuelCost: Math.round(dropoffFare.baseFuelCost),
+          peakSurcharge: Math.round(dropoffFare.peakSurcharge),
+          sharedFuelPerSeat: Math.round(dropoffFare.sharedFuelPerSeat),
+          maintenancePerSeat: Math.round(dropoffFare.maintenancePerSeat),
+          baseCostPerSeat: Math.round(dropoffFare.baseCostPerSeat),
+          driverProfitPerSeat: Math.round(dropoffFare.driverProfitPerSeat),
+          appCommissionPerSeat: Math.round(dropoffFare.appCommissionPerSeat),
+          finalFarePerSeat: Math.round(dropoffFare.finalFarePerSeat)
+        }
+      }
+    });
+
+    setIsCalculating(false);
+  };
 
   const handleTimeChange = (event, selectedDate) => {
     if (Platform.OS === 'android') {
@@ -420,7 +440,17 @@ useEffect(() => {
     if (selectedDate) {
       if (activeDatePickerFor === 'start') {
         setRequest({ ...request, date: selectedDate });
+
+        // If end date is before the new start date, update end date too
+        if (request.end_date < selectedDate) {
+          setRequest({ ...request, date: selectedDate, end_date: selectedDate });
+        }
       } else if (activeDatePickerFor === 'end') {
+        // Don't allow end date to be before start date
+        if (selectedDate < request.date) {
+          Alert.alert("Error", "End date cannot be before start date");
+          return;
+        }
         setRequest({ ...request, end_date: selectedDate });
       }
     }
@@ -682,7 +712,7 @@ useEffect(() => {
                 editable={false}
                 selectTextOnFocus={false}
                 multiline={true}
-                numberOfLines={2}
+                numberOfLines={3}
                 textAlignVertical="top"
               />
               {routeType === 'Two Way' ? (
@@ -800,50 +830,50 @@ useEffect(() => {
 
 
           {/* Fare Breakdown */}
-         {fareDetails && (
-  <View style={styles.fareCard}>
-    <Text style={styles.fareHeader}>Fare Summary</Text>
+          {fareDetails && (
+            <View style={styles.fareCard}>
+              <Text style={styles.fareHeader}>Fare Summary</Text>
 
-    <View style={styles.fareRow}>
-      <Text>Distance:</Text>
-      <Text>{distanceKm?.toFixed(1)} km</Text>
-    </View>
+              <View style={styles.fareRow}>
+                <Text>Distance:</Text>
+                <Text>{distanceKm?.toFixed(1)} km</Text>
+              </View>
 
-    <View style={styles.fareRow}>
-      <Text>Fare per Person (per day):</Text>
-      <Text>{fareDetails.farePerDay} PKR</Text>
-    </View>
+              <View style={styles.fareRow}>
+                <Text>Fare per Person (per day):</Text>
+                <Text>{fareDetails.farePerDay} PKR</Text>
+              </View>
 
-    <View style={styles.fareRow}>
-      <Text>FROM:</Text>
-      <Text>{request.date.toLocaleDateString()} </Text>
-    </View>
-    <View style={styles.fareRow}>
-      <Text>TO:</Text>
-      <Text>{request.end_date.toLocaleDateString()}</Text>
-    </View>
+              <View style={styles.fareRow}>
+                <Text>FROM:</Text>
+                <Text>{request.date.toLocaleDateString()} </Text>
+              </View>
+              <View style={styles.fareRow}>
+                <Text>TO:</Text>
+                <Text>{request.end_date.toLocaleDateString()}</Text>
+              </View>
 
-    {/*<View style={styles.fareRow}>
+              {/*<View style={styles.fareRow}>
       <Text>Days in Range:</Text>
       <Text>{fareDetails.fullRangeDays}</Text>
     </View>*/}
 
-    <View style={styles.fareRow}>
-      <Text>Total of Days:</Text>
-      <Text>{fareDetails.totalDays}</Text>
-    </View>
+              <View style={styles.fareRow}>
+                <Text>Total of Days:</Text>
+                <Text>{fareDetails.totalDays}</Text>
+              </View>
 
-    <View style={styles.fareRow}>
-      <Text>Total Fare per Person:</Text>
-      <Text>{fareDetails.totalFarePerPerson} PKR</Text>
-    </View>
+              <View style={styles.fareRow}>
+                <Text>Total Fare per Person:</Text>
+                <Text>{fareDetails.totalFarePerPerson} PKR</Text>
+              </View>
 
-    <View style={[styles.fareRow, { marginTop: 6 }]}>
-      <Text>Total Fare for {fareDetails.breakdown.seats} Seat(s):</Text>
-      <Text>{fareDetails.totalFare} PKR</Text>
-    </View>
-  </View>
-)}
+              <View style={[styles.fareRow, { marginTop: 6 }]}>
+                <Text>Total Fare for {fareDetails.breakdown.seats} Seat(s):</Text>
+                <Text>{fareDetails.totalFare} PKR</Text>
+              </View>
+            </View>
+          )}
 
 
           {/* Recurring */}
@@ -1101,7 +1131,7 @@ const styles = StyleSheet.create({
   },
   locationRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+alignItems: 'flex-start', 
     marginBottom: 12,
   },
   locationInput: {
@@ -1112,6 +1142,8 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     minHeight: 40,
     textAlignVertical: 'top',
+    flexShrink: 1,
+
   },
   directionArrowContainer: {
     alignItems: 'flex-start',
